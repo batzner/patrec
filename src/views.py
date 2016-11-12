@@ -3,6 +3,9 @@ Routes and views for the flask application.
 """
 
 from datetime import datetime
+
+import numpy
+
 from flask import render_template
 from src import app
 
@@ -12,7 +15,7 @@ def home():
     """Renders the home page."""
     return render_template(
         'index.html',
-        title='Home Page',
+        title=numpy.__version__,
         year=datetime.now().year,
     )
 

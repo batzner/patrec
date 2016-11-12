@@ -3,6 +3,8 @@ Routes and views for the internal API.
 """
 
 from flask import request, jsonify
+import numpy as np
+
 from src import app
 
 cached_images = []

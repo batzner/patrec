@@ -7,6 +7,7 @@ Dropzone.options.imagesDropzone = {
         }
         else { done(); }
     },
+    acceptedFiles: "image/png, image/jpeg, image/jpg, image/gif", //This is a comma separated list of mime types or file extensions.Eg.: image/*,application/pdf,.psd.
     dictDefaultMessage: "Drop the images here or click to upload."
 };
 

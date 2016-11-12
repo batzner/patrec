@@ -13,6 +13,11 @@ cached_images = []
 cached_pattern = None
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg'}
 
+def empty_cache():
+    global cached_images, cached_pattern
+    cached_images = []
+    cached_pattern = None
+
 
 @app.route(ROUTE_PREFIX+'/upload-images', methods=['POST'])
 def upload_images():
@@ -55,7 +60,10 @@ def upload_pattern():
 
 @app.route(ROUTE_PREFIX+'/find-matches')
 def find_matches():
-    return jsonify(recognition.find_matches(images=cached_images, pattern=cached_pattern))
+    result = recognition.find_matches(images=cached_images, pattern=cached_pattern)
+    # Empty the cache after matching
+    empty_cache()
+    return jsonify(result)
 
 
 def allowed_file(filename):

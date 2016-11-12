@@ -7,12 +7,14 @@ from datetime import datetime
 import cv2 as cv
 
 from flask import render_template
-from src import app
+from src import app, api
 
 @app.route('/')
 @app.route('/home')
 def home():
     """Renders the home page."""
+    # Empty the internal cache
+    api.empty_cache()
     return render_template(
         'index.html',
         title=cv.__version__,

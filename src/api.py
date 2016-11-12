@@ -3,7 +3,7 @@ Routes and views for the internal API.
 """
 
 from flask import request, jsonify
-import numpy as np
+import cv2 as cv
 
 from src import app
 
@@ -39,4 +39,5 @@ def allowed_file(filename):
 
 def get_image_values(file_storage):
     content = file_storage.read()
+    app.logger.debug(cv.__version__)
     return content

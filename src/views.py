@@ -9,6 +9,7 @@ import cv2 as cv
 from flask import render_template
 from src import app, api
 
+
 @app.route('/')
 @app.route('/home')
 def home():
@@ -17,9 +18,21 @@ def home():
     api.empty_cache()
     return render_template(
         'index.html',
-        title=cv.__version__,
+        title='Home',
         year=datetime.now().year,
     )
+
+
+@app.route('/result')
+def result():
+    """Renders the result page."""
+    api.empty_cache()
+    return render_template(
+        'result.html',
+        title='Result',
+        year=datetime.now().year,
+    )
+
 
 @app.route('/contact')
 def contact():
@@ -30,6 +43,7 @@ def contact():
         year=datetime.now().year,
         message='Your contact page.'
     )
+
 
 @app.route('/about')
 def about():

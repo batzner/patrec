@@ -61,8 +61,6 @@ def upload_pattern():
 @app.route(ROUTE_PREFIX+'/find-matches')
 def find_matches():
     result = recognition.find_matches(images=cached_images, pattern=cached_pattern)
-    # Empty the cache after matching
-    empty_cache()
     return jsonify(result)
 
 

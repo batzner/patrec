@@ -1,12 +1,12 @@
 ﻿body {
     padding-top: 50px;
     padding-bottom: 20px;
+    background-color: #f1f2f7;
 }
 
 /* Set padding to keep content from hitting the edges */
 .body-content {
-    padding-left: 15px;
-    padding-right: 15px;
+    padding: 15px 15px 0px 15px;
 }
 
 /* Set width on the form input elements since they're 100% wide by default */
@@ -39,4 +39,25 @@ input[type="checkbox"].input-validation-error {
 
 .validation-summary-valid {
     display: none;
+}
+
+/* CUSTOM */
+
+.dropzone {
+    border: 2px dashed #999999;
+    border-radius: 5px;
+    background: white;
+}
+
+#imagesDropzone {
+    height: 400px;
+}
+
+#patternDropzone {
+    height: 200px;
+    margin-bottom: 20px;
+}
+
+#startButton {
+    width: 100%;
 }

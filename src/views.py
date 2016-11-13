@@ -14,8 +14,6 @@ from src import app, api
 @app.route('/home')
 def home():
     """Renders the home page."""
-    # Empty the internal cache
-    api.empty_cache()
     return render_template(
         'index.html',
         title='Home',
@@ -26,7 +24,6 @@ def home():
 @app.route('/result')
 def result():
     """Renders the result page."""
-    api.empty_cache()
     return render_template(
         'result.html',
         title='Result',

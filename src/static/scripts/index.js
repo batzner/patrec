@@ -1,3 +1,6 @@
+// Empty the server cache
+$.post('/api/empty-cache');
+
 $('.alert').hide();
 
 currentPattern = null;

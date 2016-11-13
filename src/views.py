@@ -3,8 +3,7 @@ Routes and views for the flask application.
 """
 
 from datetime import datetime
-
-import cv2 as cv
+import time
 
 from flask import render_template
 from src import app, api
@@ -17,7 +16,7 @@ def home():
     return render_template(
         'index.html',
         title='Home',
-        year=datetime.now().year,
+        year=datetime.now().year
     )
 
 
@@ -28,6 +27,7 @@ def result():
         'result.html',
         title='Result',
         year=datetime.now().year,
+        current_time=time.time()
     )
 
 

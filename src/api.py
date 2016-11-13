@@ -4,8 +4,6 @@ Routes and views for the internal API.
 import uuid
 from StringIO import StringIO
 
-import cv2
-
 from PIL import Image
 from flask import request, jsonify, send_file
 import numpy as np
@@ -15,14 +13,16 @@ from src import app, recognition
 ROUTE_PREFIX = '/api'
 
 cached_images = dict()
+ordered_image_ids = []
 cached_pattern = None
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg'}
 
 
 @app.route(ROUTE_PREFIX + '/empty-cache', methods=['POST'])
 def empty_cache():
-    global cached_images, cached_pattern
+    global cached_images, cached_pattern, ordered_image_ids
     cached_images = dict()
+    ordered_image_ids = []
     cached_pattern = None
     return jsonify(status=200, success=True)
 
@@ -46,6 +46,7 @@ def upload_images():
         image = get_pil(file_storage)
         image_id = uuid.uuid4()
         cached_images[image_id] = image
+        ordered_image_ids.append(image_id)
 
     return jsonify(status=200, success=True)
 
@@ -69,23 +70,24 @@ def upload_pattern():
 
 @app.route(ROUTE_PREFIX + '/find-matches')
 def find_matches():
-    image_ids = cached_images.keys()
-    image_values = [get_image_values(cached_images[image_id]) for image_id in image_ids]
+    image_values = [get_image_values(cached_images[image_id]) for image_id in ordered_image_ids]
     pattern_values = get_image_values(cached_pattern)
     result = recognition.find_matches(images=image_values, pattern=pattern_values)
 
     # For each image, add its id to the result
-    for image_result, image_id in zip(result, image_ids):
+    for image_result, image_id in zip(result, ordered_image_ids):
         image_result['id'] = image_id
     return jsonify(result)
 
 
 @app.route(ROUTE_PREFIX + '/get-pattern')
 def get_pattern():
-    result = recognition.find_matches(images=cached_images, pattern=cached_pattern)
+    return serve_pil_image(cached_pattern)
 
-    # For each image, add its id to the result
-    return jsonify(result)
+
+@app.route(ROUTE_PREFIX + '/get-image/<uuid:image_id>')
+def get_image(image_id):
+    return serve_pil_image(cached_images[image_id])
 
 
 def allowed_file(filename):

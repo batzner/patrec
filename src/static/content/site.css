@@ -47,7 +47,7 @@ input[type="checkbox"].input-validation-error {
     display:none;
 }
 
-.dropzone, .resultzone {
+.box {
     border: 2px dashed #999999;
     border-radius: 5px;
     background: white;
@@ -74,4 +74,9 @@ input[type="checkbox"].input-validation-error {
 .result-item img {
     width: 120px;
     height: 120px;
+}
+
+.disabled-button, .disabled-button:active, .disabled-button:focus, .disabled-button:visited, .disabled-button:hover {
+    background-color: #DDDDE2;
+    border-color: #CCCCD2;
 }

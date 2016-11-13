@@ -1,5 +1,5 @@
-﻿body {
-    padding-top: 50px;
+body {
+    padding-top: 60px;
     padding-bottom: 20px;
     background-color: #f1f2f7;
 }
@@ -53,12 +53,18 @@ input[type="checkbox"].input-validation-error {
     background: white;
 }
 
-#images-dropzone {
-    height: 400px;
+.big-box {
+    min-height: 400px;
 }
 
-#pattern-dropzone {
-    height: 200px;
+@media screen and (max-width: 767px) {
+    .big-box {
+        margin-bottom: 20px;
+    }
+}
+
+.small-box {
+    min-height: 200px;
     margin-bottom: 20px;
 }
 
@@ -76,7 +82,79 @@ input[type="checkbox"].input-validation-error {
     height: 120px;
 }
 
+.btn-primary {
+    background-color: #4966c6 !important;
+    border-color: #324c9e !important;
+}
+
+.btn-primary:hover {
+    background-color: #324c9e;
+    border-color: #213b8d;
+}
+
 .disabled-button, .disabled-button:active, .disabled-button:focus, .disabled-button:visited, .disabled-button:hover {
-    background-color: #DDDDE2;
-    border-color: #CCCCD2;
+    background-color: #DDDDE2 !important;
+    border-color: #CCCCD2 !important;
+}
+
+.navbar-inverse {
+    background-color: #344da0;
+    border-color: #324c9e;
+    border-width: 0 0 2px;
+}
+
+.navbar-inverse .navbar-brand {
+    color: #FFFFFF;
+}
+
+.navbar-inverse .navbar-nav>li>a {
+    color: #EEEEEE;
+}
+
+.navbar-nav>li>a {
+    line-height: 20px;
+}
+
+#logo {
+    height: 30px;
+    width: 30px;
+    margin-right: 10px;
+}
+
+.navbar-brand {
+    padding: 10px 15px;
+}
+
+.navbar-inverse .navbar-toggle {
+    border-color: #DDDDDD;
+}
+
+.navbar-inverse .navbar-toggle:hover, .navbar-inverse .navbar-toggle:focus {
+    background-color: rgba(255,255,255,0.3);
+}
+
+.navbar-inverse .navbar-collapse, .navbar-inverse .navbar-form {
+    border-color: #DDDDDD;
+}
+
+.dz-default.dz-message {
+    color: #607D8B;
+}
+
+.big-box .dz-default.dz-message {
+    margin-top: 150px;
+    font-size: 1.5em;
+}
+
+.small-box .dz-default.dz-message {
+    margin-top: 50px;
+}
+
+footer {
+    text-align: center;
+}
+
+hr {
+    border-color: #DDDDDD;
+    margin: 40px 0px;
 }

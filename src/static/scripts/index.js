@@ -85,7 +85,15 @@ function isReadyForSubmit() {
     // Check that there are files
     if (!imagesDropzone.files.length) return false;
 
+    // Check that there is no current upload
+    if (isUploading()) return false;
+
     return true;
+}
+
+function isUploading() {
+    return (imagesDropzone.getQueuedFiles().length || imagesDropzone.getUploadingFiles().length
+        || imagesDropzone.getQueuedFiles().length || imagesDropzone.getUploadingFiles().length);
 }
 
 function showMissingMessage() {
@@ -95,5 +103,7 @@ function showMissingMessage() {
         errorMessage.show().html('Please add a pattern before starting the recognition.');
     } else if (!imagesDropzone.files.length) {
         errorMessage.show().html('Please add some images before starting the recognition.');
+    } else if (isUploading) {
+        errorMessage.show().html('Please wait until all images are uploaded.');
     }
 }

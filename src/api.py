@@ -97,9 +97,8 @@ def get_pil(file_storage):
 
 
 def get_image_values(image):
-    rgb_values = np.asarray(image)
-    bgr_values = cv2.cvtColor(rgb_values, cv2.COLOR_RGB2BGR)
-    return bgr_values
+    values = np.asarray(image)
+    return values
 
 
 def serve_pil_image(pil_img):

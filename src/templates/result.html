@@ -3,20 +3,14 @@
 {% block content %}
 
 <div class="row">
-    <div class="col-md-9">
-        <div class="resultzone" id="images-dropzone">
-            <ul id="result-list">
-                <li class="result-item">
-                    <img src="/static/img/placeholder.png"/>
-                    Score: -
-                    Match: -
-                </li>
-            </ul>
+    <div class="col-sm-8 col-md-9">
+        <div class="big-box" id="result-list">
+            <div id="spinner"></div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="resultzone" id="pattern-dropzone">
-            <img src={{url_for('get_pattern', fake_preventing_cache=current_time)}} id="pattern"/>
+    <div class="col-sm-4 col-md-3">
+        <div class="small-box box img-wrapper" id="pattern">
+            <img src={{url_for('get_pattern', fake_preventing_cache=current_time)}}/>
         </div>
         <div class="alert alert-info" id="form-info"></div>
         <div class="alert alert-success" id="form-success"></div>
@@ -29,5 +23,6 @@
 
 {% block scripts %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dropzone/4.3.0/min/dropzone.min.js" type="text/javascript"></script>
+<script src="http://spin.js.org/spin.min.js" type="text/javascript"></script>
 <script src="/static/scripts/result.js" type="text/javascript"></script>
 {% endblock %}

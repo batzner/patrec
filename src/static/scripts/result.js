@@ -42,10 +42,18 @@ function fillMatches(data) {
     data.forEach(function (match) {
         var resultItem = $('<div class="result-item box"/>');
         resultItem.append($('<div class="img-wrapper"><img src="/api/get-image/'+match.id+'"/></div>'));
+
+        var scoreWrapper = $('<div class="score-wrapper"/>');
         var score = parseInt(match.value*100);
-        var isMatch = match.is_match ? 'yes' : 'no';
-        resultItem.append($('<p>Score: '+score+'%</p>'));
-        resultItem.append($('<p>Match: '+isMatch+'</p>'));
+        scoreWrapper.append($('<div class="score">'+score+'<span class="unit">%</span></div>'));
+        scoreWrapper.append($('<div class="metric-name">Similarity</div>'));
+        resultItem.append(scoreWrapper);
+
+        var matchStatus = '<div class="match-wrapper"><i class="fa fa-check-circle match-icon"></i><div class="metric-name">Match</div></div>';
+        if (!match.is_match) {
+            matchStatus = '<div class="match-wrapper"><i class="fa fa-times-circle no-match-icon"></i><div class="metric-name">No Match</div></div>';
+        }
+        resultItem.append($(matchStatus));
         resultList.append(resultItem);
     });
 }

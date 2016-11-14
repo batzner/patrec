@@ -77,6 +77,9 @@ def find_matches():
     # For each image, add its id to the result
     for image_result, image_id in zip(result, ordered_image_ids):
         image_result['id'] = image_id
+
+    # Order the result by score
+    result = sorted(result, key=lambda r: -r['value'])
     return jsonify(result)
 
 

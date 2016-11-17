@@ -44,8 +44,8 @@ function fillMatches(data) {
         resultItem.append($('<div class="img-wrapper"><img src="/api/get-image/'+match.id+'"/></div>'));
 
         var scoreWrapper = $('<div class="score-wrapper"/>');
-        var score = parseInt(match.value*100);
-        scoreWrapper.append($('<div class="score">'+score+'<span class="unit">%</span></div>'));
+        var score = parseInt(match.value);
+        scoreWrapper.append($('<div class="score">'+score+'<span class="unit">Votes</span></div>'));
         scoreWrapper.append($('<div class="metric-name">Similarity</div>'));
         resultItem.append(scoreWrapper);
 

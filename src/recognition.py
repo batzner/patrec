@@ -118,19 +118,19 @@ class PatternRecognition(object):
 		if votes > 9:
 			# match
 
-			if mark_match:
-				# filter "outlier" keypoints that are likely not part of the real object
-
-				# image_color = cv.cvtColor(image_color, cv.COLOR_RGB2BGR)
-				# image_color = cv.drawKeypoints(image_color, matched_keypoints)
-				img_matches = visulize_matches(good_matches, self.pattern_sift_keypoints, img_sift_kp,
-				                               self.pattern_gray, image_gray)
-				cv.imshow(
-					'[{0}] - MR: {1:.3f} - Mean Dist: {2:.1f} - SI Bow Score: {3:.3f} - Color Score: {4:.3f} - Matches: {5}'.format(
-						votes, match_ratio_score, mean_distance_score, sift_similarity_score, color_similarity_score,
-						len(good_matches)), img_matches)
-				cv.waitKey(0)
-				cv.destroyAllWindows()
+			# if mark_match:
+			# 	# filter "outlier" keypoints that are likely not part of the real object
+			#
+			# 	# image_color = cv.cvtColor(image_color, cv.COLOR_RGB2BGR)
+			# 	# image_color = cv.drawKeypoints(image_color, matched_keypoints)
+			# 	img_matches = visulize_matches(good_matches, self.pattern_sift_keypoints, img_sift_kp,
+			# 	                               self.pattern_gray, image_gray)
+			# 	cv.imshow(
+			# 		'[{0}] - MR: {1:.3f} - Mean Dist: {2:.1f} - SI Bow Score: {3:.3f} - Color Score: {4:.3f} - Matches: {5}'.format(
+			# 			votes, match_ratio_score, mean_distance_score, sift_similarity_score, color_similarity_score,
+			# 			len(good_matches)), img_matches)
+			# 	cv.waitKey(0)
+			# 	cv.destroyAllWindows()
 
 			return (True, {'match_ratio_score': match_ratio_score, 'mean_distance_score': mean_distance_score,
 			               'sift_similarity_score': sift_similarity_score,
@@ -332,7 +332,7 @@ def find_matches(images, pattern):
 		# cv.waitKey(0)
 		# cv.destroyAllWindows()
 		if is_pattern:
-			result.append({'value': scores['match_ratio_score'], 'is_match': True})
+			result.append({'value': scores['votes'], 'is_match': True})
 			print '[X] Match.\t\tMatch Ratio: {0:.3f} - Mean Distance: {1:.3f} - Sift Bow Similarity: {2:.3f} - Votes: {3:.3f} - Color: {4:.3f} - Num Keypoints: {5:.3f}'.format(
 				scores['match_ratio_score'], scores['mean_distance_score'], scores['sift_similarity_score'],
 				scores['votes'], scores['color_similarity_score'], scores['num_filtered_keypoints'])
@@ -340,7 +340,7 @@ def find_matches(images, pattern):
 			print '[-] No Match.\tMatch Ratio: {0:.3f} - Mean Distance: {1:.3f} - Sift Bow Similarity: {2:.3f} - Votes: {3:.3f} - Color: {4:.3f} - Num Keypoints: {5:.3f}'.format(
 				scores['match_ratio_score'], scores['mean_distance_score'], scores['sift_similarity_score'],
 				scores['votes'], scores['color_similarity_score'], scores['num_filtered_keypoints'])
-			result.append({'value': scores['match_ratio_score'], 'is_match': False})
+			result.append({'value': scores['votes'], 'is_match': False})
 
 		csv_result.append(
 			[is_pattern, scores['match_ratio_score'], scores['mean_distance_score'], scores['sift_similarity_score'],

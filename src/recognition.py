@@ -1,18 +1,18 @@
-import random
-
 import numpy as np
 import cv2 as cv
-from src import app
 from math import sqrt
 from sklearn import metrics
+import os
+import uuid
+import csv
 
 image_resolution = 250000
 bag_of_words_size = 20
-histogram_image_segments = 16
-histogram_number_of_bins = 64
+histogram_image_segments = 4
+histogram_number_of_bins = 8
 histogram_color_range = [0, 256]
-histogram_scale_hist = True
-sliding_window = True
+histogram_scale_hist = False
+apply_sliding_window = False
 
 
 class PatternRecognition(object):
@@ -60,7 +60,7 @@ class PatternRecognition(object):
 		# if no sift keypoints could be found there is no match
 		if len(img_sift_kp) == 0:
 			return (False, {'match_ratio_score': 0, 'mean_distance_score': 10000, 'sift_similarity_score': 10000,
-			                'color_similarity_score': 10000, 'votes': 0})
+			                'color_similarity_score': 10000, 'votes': -1000, 'num_filtered_keypoints': 0})
 
 		sift_similarity_score = self.__calculate_sift_score(image_gray, img_sift_kp)
 		color_similarity_score = self.__calculate_color_score(image_color)
@@ -69,39 +69,51 @@ class PatternRecognition(object):
 		# distance measurement is Norm_L2 which is the euclidean distance.
 		bf = cv.BFMatcher()
 		matches = bf.knnMatch(img_sift_desc, self.pattern_sift_descriptors, k=2)
-
 		# apply ratio test as reccomended in D. G. Lowe. "Object recognition from local scale-invariant features."
 		# ratio is slightly altered from original paper.
 		good_matches = []
 		matched_keypoints = []
 		distances = []
+
+		# count how many times a certain keypoint in the pattern image is matched against
+		# if it is matched against many times, that means that this keypoint might be too general
+		keypoint_matches = np.zeros((len(self.pattern_sift_keypoints)))
+
 		for m, n in matches:
 			if m.distance < 0.75 * n.distance:
+				# Do not add a keypoint if it already has 4 matches
+				if keypoint_matches[m.trainIdx] >= 4:
+					continue
+
+				keypoint_matches[m.trainIdx] += 1
 				distances.append(m.distance)
 				good_matches.append([m])
 				matched_keypoints.append(img_sift_kp[m.queryIdx])
 
+		# print keypoint_scores
 		match_ratio_score = float(len(good_matches)) / (float(len(matches)) + 1e-10)  # 1e-10 to prevent 0-div
 
 		if len(distances) > 0:
 			mean_distance_score = np.mean(distances)
 		else:
 			mean_distance_score = 10000
+
 		filtered_keypoints = self.__eliminate_closest_neighbor_noise(matched_keypoints)
+		number_of_filtered_keypoints = len(filtered_keypoints)
 		# vote casting
 		votes = 0
-		if match_ratio_score > 0.020 and len(filtered_keypoints) > 1:
+		if match_ratio_score > 0.020 and len(matched_keypoints) >= 3:
 			votes += match_ratio_score * 300
-		if len(filtered_keypoints) > 4:
-			votes += 0.3 * len(filtered_keypoints)
+		if number_of_filtered_keypoints > 4:
+			votes += 0.3 * number_of_filtered_keypoints
 		if mean_distance_score < 180:
 			votes += 2
 		if mean_distance_score > 210:
-			votes -= 4.5
-		if sift_similarity_score < 0.7:
-			votes += 1.5
-		if color_similarity_score < 40:
-			votes += 0.5
+			votes -= ((210 - mean_distance_score) / 4) * (-1)
+		if sift_similarity_score < 0.9:
+			votes += ((sift_similarity_score - 0.6) * 15) * (-1)
+		if color_similarity_score > 0.35:
+			votes += 5
 
 		if votes > 9:
 			# match
@@ -109,50 +121,72 @@ class PatternRecognition(object):
 			if mark_match:
 				# filter "outlier" keypoints that are likely not part of the real object
 
-				image_color = cv.cvtColor(image_color, cv.COLOR_RGB2BGR)
-				image_color = cv.drawKeypoints(image_color, matched_keypoints)
-				# cv.imshow('[{0}] - MR: {1:.3f} - Mean Dist: {2:.1f} - SI Bow Score: {3:.3f} - Color Score: {4:.3f} - Matches: {5}'.format(votes, match_ratio_score, mean_distance_score, sift_similarity_score, color_similarity_score, len(good_matches)), image_color)
+				# image_color = cv.cvtColor(image_color, cv.COLOR_RGB2BGR)
+				# image_color = cv.drawKeypoints(image_color, matched_keypoints)
+				img_matches = visulize_matches(good_matches, self.pattern_sift_keypoints, img_sift_kp,
+				                               self.pattern_gray, image_gray)
+				cv.imshow(
+					'[{0}] - MR: {1:.3f} - Mean Dist: {2:.1f} - SI Bow Score: {3:.3f} - Color Score: {4:.3f} - Matches: {5}'.format(
+						votes, match_ratio_score, mean_distance_score, sift_similarity_score, color_similarity_score,
+						len(good_matches)), img_matches)
+				cv.waitKey(0)
+				cv.destroyAllWindows()
 
 			return (True, {'match_ratio_score': match_ratio_score, 'mean_distance_score': mean_distance_score,
 			               'sift_similarity_score': sift_similarity_score,
-			               'color_similarity_score': color_similarity_score, 'votes': votes})
+			               'color_similarity_score': color_similarity_score, 'votes': votes,
+			               'num_filtered_keypoints': number_of_filtered_keypoints})
 		else:
 			# no match
-			image_color = cv.cvtColor(image_color, cv.COLOR_RGB2BGR)
+			# image_color = cv.cvtColor(image_color, cv.COLOR_RGB2BGR)
 			# if mark_match:
 			# cv.imshow('[-] - MR: {0:.3f} - Mean Dist: {1:.1f} - SI Bow Score: {2:.3f} - Color Score: {3:.3f}'.format(match_ratio_score, mean_distance_score, sift_similarity_score, color_similarity_score), image_color)
 
 			return (False, {'match_ratio_score': match_ratio_score, 'mean_distance_score': mean_distance_score,
 			                'sift_similarity_score': sift_similarity_score,
-			                'color_similarity_score': color_similarity_score, 'votes': votes})
+			                'color_similarity_score': color_similarity_score, 'votes': votes,
+			                'num_filtered_keypoints': number_of_filtered_keypoints})
 
 	def next(self):
 		for image in self.images_color:
-			if not sliding_window:
+			if not apply_sliding_window:
 				yield self.is_match(image)
 			else:
-				is_match, score = self.is_match(image)
+				is_match, score = self.is_match(image)  # first, match whole image
 				if is_match:
 					yield is_match, score
 					continue
+
+					# if whole image matching was not succesful, match sliding window
 				matches = []
 				scores = []
-				votes = []
 				window_visualization = cv.cvtColor(image, cv.COLOR_RGB2BGR)
 
 				for image_region, image_part in sliding_window(image, size=(100, 100), stride=100):
 					# increase size of sliding window part
 					image_part = equalize_image_size(image_part, image_resolution)
-					is_match, score = self.is_match(image_part, True)
-					scores.append(score)
-					votes.append(score['votes'])
+					is_match, part_score = self.is_match(image_part, True)
+					scores.append([part_score['match_ratio_score'], part_score['mean_distance_score'],
+					               part_score['sift_similarity_score'], part_score['color_similarity_score'],
+					               part_score['votes'], part_score['num_filtered_keypoints']])
 					if is_match:
-						matches.append(1)
+						matches.append(True)
 						window_visualization = image_region.overlay_rectangle(window_visualization)
 					else:
-						matches.append(0)
+						matches.append(False)
 				# cv.imshow("Matches: {0} - Votes: {1}".format(np.sum(matches), np.sum(votes)), window_visualization)
-				yield np.sum(matches) > 0, scores[0]
+				# take the score with the most votes and return it
+				scores = np.array(scores)
+				votes_vector = scores[:, 4]
+				best_vote_idx = np.argmax(votes_vector)
+				best_vote_score = scores[best_vote_idx]
+				best_vote_score_dict = {'match_ratio_score': best_vote_score[0],
+				                        'mean_distance_score': best_vote_score[1],
+				                        'sift_similarity_score': best_vote_score[2],
+				                        'color_similarity_score': best_vote_score[3], 'votes': best_vote_score[4],
+				                        'num_filtered_keypoints': best_vote_score[5]}
+
+				yield np.any(matches), best_vote_score_dict
 
 	def __calculate_sift_score(self, image, img_sift_kp):
 		# if no keypoints were found return a bad sift score
@@ -161,12 +195,14 @@ class PatternRecognition(object):
 
 		# get bow features for image
 		img_bow_sift_desc = self.bow.compute_feature_vector(image, img_sift_kp)
-		return self.__calculate_chi2_distance(self.pattern_bow_features, img_bow_sift_desc)
+		return self.__calculate_norm_distance(self.pattern_bow_features, img_bow_sift_desc)
 
 	def __calculate_color_score(self, image):
 		image_color_feature = self.__create_color_histogram_feature_vector(image)
 
-		color_score = self.__calculate_chi2_distance(self.pattern_color_features, image_color_feature)
+		color_score = self.__calculate_norm_distance(self.pattern_color_features, image_color_feature)
+		color_score = 1 - (color_score/164000)
+
 		return color_score
 
 	def __create_color_histogram_feature_vector(self, image):
@@ -207,6 +243,14 @@ class PatternRecognition(object):
 			# app.logger.debug('Could not calculate Chi2 distance: F1 {0} - F2 {1}'.format(f1, f2))
 			d = 1000
 		return d
+
+	def __calculate_norm_distance(self, f1, f2):
+		try:
+			d = metrics.euclidean_distances(f1.reshape(1, -1), f2.reshape(1, -1))
+		except:
+			# app.logger.debug('Could not calculate Chi2 distance: F1 {0} - F2 {1}'.format(f1, f2))
+			d = 1000
+		return d[0][0]
 
 	def __calculate_bow_for_images(self):
 
@@ -281,20 +325,28 @@ def find_matches(images, pattern):
 	result = []
 	pr = PatternRecognition(images, pattern)
 	pr.initialize()
-
+	csv_result = [['Match', 'match_ratio_score', 'mean_distance_score', 'sift_similarity_score', 'votes',
+	               'num_filtered_keypoints', 'color_similarity_score']]
 	# Search for pattern matches
 	for is_pattern, scores in pr.next():
 		# cv.waitKey(0)
 		# cv.destroyAllWindows()
 		if is_pattern:
 			result.append({'value': scores['match_ratio_score'], 'is_match': True})
-			print '[X] Match.\tMatch Ratio: {0:.3f} - Mean Distance: {1:.3f} - Sift Bow Similarity: {2:.3f}'.format(
-				scores['match_ratio_score'], scores['mean_distance_score'], scores['sift_similarity_score'])
+			print '[X] Match.\t\tMatch Ratio: {0:.3f} - Mean Distance: {1:.3f} - Sift Bow Similarity: {2:.3f} - Votes: {3:.3f} - Color: {4:.3f} - Num Keypoints: {5:.3f}'.format(
+				scores['match_ratio_score'], scores['mean_distance_score'], scores['sift_similarity_score'],
+				scores['votes'], scores['color_similarity_score'], scores['num_filtered_keypoints'])
 		else:
-			print '[-] No Match.\tMatch Ratio: {0:.3f} - Mean Distance: {1:.3f} - Sift Bow Similarity: {2:.3f}'.format(
-				scores['match_ratio_score'], scores['mean_distance_score'], scores['sift_similarity_score'])
+			print '[-] No Match.\tMatch Ratio: {0:.3f} - Mean Distance: {1:.3f} - Sift Bow Similarity: {2:.3f} - Votes: {3:.3f} - Color: {4:.3f} - Num Keypoints: {5:.3f}'.format(
+				scores['match_ratio_score'], scores['mean_distance_score'], scores['sift_similarity_score'],
+				scores['votes'], scores['color_similarity_score'], scores['num_filtered_keypoints'])
 			result.append({'value': scores['match_ratio_score'], 'is_match': False})
 
+		csv_result.append(
+			[is_pattern, scores['match_ratio_score'], scores['mean_distance_score'], scores['sift_similarity_score'],
+			 scores['votes'], scores['color_similarity_score'], scores['num_filtered_keypoints']])
+	csve = CsvExporter()
+	csve.export(csv_result)
 	return result
 
 
@@ -331,11 +383,44 @@ def crop_image(image, x, y, w, h):
 	return image
 
 
+def get_uuid():
+	""" Generates a unique string id."""
+
+	x = uuid.uuid1()
+	return str(x)
+
+
 def sliding_window(image, size, stride):
 	for y in xrange(0, image.shape[0], stride):
 		for x in xrange(0, image.shape[1], stride):
 			roi = ImageRegion(upper_left=(x, y), lower_right=(x + size[0], y + size[1]))
 			yield roi, crop_image(image, x, y, size[0], size[1])
+
+
+def visulize_matches(matches, k2, k1, img2, img1):
+	""" Visualize SIFT keypoint matches."""
+
+	import scipy as sp
+	img2 = cv.cvtColor(img2, cv.COLOR_GRAY2BGR)
+	img1 = cv.cvtColor(img1, cv.COLOR_GRAY2BGR)
+	h1, w1 = img1.shape[:2]
+	h2, w2 = img2.shape[:2]
+	view = sp.zeros((max(h1, h2), w1 + w2, 3), sp.uint8)
+	view[:h1, :w1, :] = img1
+	view[:h2, w1:, :] = img2
+	view[:, :, 1] = view[:, :, 0]
+	view[:, :, 2] = view[:, :, 0]
+
+	for m in matches:
+		m = m[0]
+		# draw the keypoints
+		# print m.queryIdx, m.trainIdx, m.distance
+		color = tuple([sp.random.randint(0, 255) for _ in xrange(3)])
+		pt1 = (int(k1[m.queryIdx].pt[0]), int(k1[m.queryIdx].pt[1]))
+		pt2 = (int(k2[m.trainIdx].pt[0] + w1), int(k2[m.trainIdx].pt[1]))
+
+		cv.line(view, pt1, pt2, color)
+	return view
 
 
 class BagOfWords(object):
@@ -350,7 +435,7 @@ class BagOfWords(object):
 	def create_BOW(self, descriptors):
 		"""Computes a Bag of Words with a set of descriptors."""
 
-		app.logger.debug('Creating BOW with size {0} with {1} descriptors.'.format(self.size, len(descriptors)))
+		print 'Creating BOW with size {0} with {1} descriptors.'.format(self.size, len(descriptors))
 		bowTrainer = cv.BOWKMeansTrainer(self.size)
 
 		# Convert the list of numpy arrays to a single numpy array
@@ -360,14 +445,14 @@ class BagOfWords(object):
 		if not npdescriptors.dtype == np.float32:
 			npdescriptors = np.float32(npdescriptors)
 
-		app.logger.debug('Clustering BOW with Extractor {0} and Matcher {1}'.format(self.dextractor, self.dmatcher))
+		print 'Clustering BOW with Extractor {0} and Matcher {1}'.format(self.dextractor, self.dmatcher)
 		self.__BOWVocabulary = bowTrainer.cluster(npdescriptors)
 
 		# need to convert vocabulary?
 		if self.__BOWVocabulary.dtype != self.vocabularyType:
 			self.__BOWVocabulary = self.__BOWVocabulary.astype(self.vocabularyType)
 
-		app.logger.debug('BOW vocabulary creation finished.')
+		print 'BOW vocabulary creation finished.'
 
 		# Create the BoW descriptor
 		self.__BOWDescriptor = cv.BOWImgDescriptorExtractor(cv.DescriptorExtractor_create(self.dextractor),
@@ -477,3 +562,29 @@ class Rectangle(object):
 		self.width, self.height = size
 		self.upper_left = upper_left_point
 		self.lower_right = (upper_left_point[0] + self.width, upper_left_point[1] + self.height)
+
+
+class CsvExporter(object):
+	""" Simple csv exporter that saves reports into the root path of the model."""
+
+	def __init__(self, path=os.getcwd() + '/data/'):
+		self.path = path
+
+	def export(self, data, name=None):
+		"""
+        Exports the given data.
+
+        Keyword arguments:
+        data -- list of a list of the data. rows[cols[]]
+        name -- optional name of the file. If None a uuid is generated."
+        """
+
+		if name is None:
+			name = get_uuid()
+		path = self.path + name + ".csv"
+		with open(path, "wb") as f:
+			writer = csv.writer(f, dialect="excel")
+			writer.writerows(data)
+
+		# return the path
+		return path

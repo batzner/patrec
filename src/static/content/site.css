@@ -86,23 +86,24 @@ input[type="checkbox"].input-validation-error {
     padding: 10px;
     margin-bottom: 10px;
     width: 100%;
+    position: relative;
+    text-align: center;
 }
 
 .result-item:last-child {
     margin-bottom: 0px;
 }
 
-@media screen and (min-width: 768px) {
+@media screen and (min-width: 992px) {
     .result-item {
         margin-right: 10px;
         width: calc(50% - 10px);
         float: left;
+        color: #555555;
     }
 }
 
-.img-wrapper {
-    position: relative;
-}
+.img-wrapper {position: relative;}
 
 .result-item .img-wrapper{
     width: 120px;
@@ -110,7 +111,7 @@ input[type="checkbox"].input-validation-error {
     float: left;
     border-radius: 5px;
     background-color: #F4F4F4;
-    margin-right: 20px;
+    margin-right: 30px;
 }
 
 .result-item img, #pattern img {
@@ -136,19 +137,34 @@ input[type="checkbox"].input-validation-error {
     max-height: calc(100% - 20px);
 }
 
-.result-item p {
-    font-size: 1.2em;
-    color: #555555;
+.result-item .score-wrapper {
+    float: left;
+    margin-right: 30px;
 }
 
-.result-item p:first-of-type {
-    margin-top: 30px;
+.result-item .score {margin-top: 20px;font-size: 2.5em;font-weight: 200;}
+
+.unit {font-size: 0.7em;margin-left: 5px;font-weight: normal;}
+
+.result-item .metric-name {text-transform: uppercase;letter-spacing: 0.5px;font-weight: 200;font-size: 0.9em;}
+
+.result-item .match-wrapper .fa{
+    font-size: 3rem;
+    margin-top: 20px;
+    line-height: 50px;
+}
+
+.result-item .match-wrapper {float: left;min-width: 68px;}
+
+.match-icon {
+    color: #9cd09c;
+}
+
+.no-match-icon {
+    color: #d0d0d0;
 }
 
 @media screen and (min-width: 768px) and (max-width: 991px) {
-    .result-item p:first-of-type {
-        margin-top: 10px;
-    }
 }
 
 .btn-primary {
@@ -226,4 +242,3 @@ footer {
 hr {
     border-color: #DDDDDD;
     margin: 40px 0px;
-}

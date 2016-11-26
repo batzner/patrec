@@ -29,11 +29,10 @@ var spinner = new Spinner(opts).spin(target);
 // Load the matches
 $.get('/api/find-matches')
     .done(function(data) {
-        console.log(data);
         fillMatches(data);
     })
     .fail(function(error) {
-        console.log(error)
+        console.log(error);
     });
 
 function fillMatches(data) {
@@ -45,8 +44,8 @@ function fillMatches(data) {
 
         var scoreWrapper = $('<div class="score-wrapper"/>');
         var score = parseInt(match.value);
-        scoreWrapper.append($('<div class="score">'+score+'<span class="unit">Votes</span></div>'));
-        scoreWrapper.append($('<div class="metric-name">Similarity</div>'));
+        scoreWrapper.append($('<div class="score">'+score+'<span class="unit"></span></div>'));
+        scoreWrapper.append($('<div class="metric-name">Votes</div>'));
         resultItem.append(scoreWrapper);
 
         var matchStatus = '<div class="match-wrapper"><i class="fa fa-check-circle match-icon"></i><div class="metric-name">Match</div></div>';

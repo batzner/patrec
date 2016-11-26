@@ -140,6 +140,7 @@ input[type="checkbox"].input-validation-error {
 .result-item .score-wrapper {
     float: left;
     margin-right: 30px;
+    min-width: 70px;
 }
 
 .result-item .score {margin-top: 20px;font-size: 2.5em;font-weight: 200;}

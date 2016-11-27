@@ -2,9 +2,20 @@
 
 {% block content %}
 
-<h2>{{ title }}.</h2>
-<h3>{{ message }}</h3>
+<div class="row">
+    <div class="info-text">
+        <h2>PatRec - Pattern Recognition for Logo Matching</h2>
 
-<p>Use this area to provide additional information.</p>
+        <p>PatRec allows you to scan a set of images for a given pattern. It uses an ensemble of Feature Descriptors to identify the pattern in each of the
+        given images. Thus it achieves a high accuracy without having to train the ensemble. This means that PatRec can scan images instantly for any
+            given pattern.
+        </p>
+
+        <p>
+            To try out PatRec, go to Home and drop the images and the pattern in the boxes. Then click 'Find matches' to see the result. The result
+            will contain the number of votes from the Feature Descriptors and the corresponding prediction: 'Match' or 'No Match'.
+        </p>
+    </div>
+</div>
 
 {% endblock %}

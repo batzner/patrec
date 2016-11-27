@@ -51,9 +51,19 @@ input[type="checkbox"].input-validation-error {
     border: 2px dashed #999999;
 }
 
-.box {
+.box, .info-text {
     border-radius: 5px;
     background: white;
+}
+
+.info-text {
+    padding: 20px;
+    width: 80%;
+    margin: 0 auto;
+}
+
+.info-text p {
+    margin-top: 20px;
 }
 
 .big-box {

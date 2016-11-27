@@ -27,6 +27,7 @@ $("div#images-dropzone").dropzone({
     },
     maxFilesize: 100, // MB
     paramName: "file", // The name that will be used to transfer the file
+    uploadMultiple: false,
     url: "/api/upload-images"
 });
 

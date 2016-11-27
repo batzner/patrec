@@ -1,12 +1,9 @@
 #!/usr/bin/python
-                         
-activate_this = '/var/www/patrec/env/bin/activate_this.py'
-execfile(activate_this, dict(__file__=activate_this))
-
+                        
 import sys
 import logging
 logging.basicConfig(stream=sys.stderr)
-sys.path.insert(0,"/var/www/patrec/")
+sys.path.insert(0,"/var/www/html/patrec/")
 
 from src import app as application
 if __name__ == "__main__":

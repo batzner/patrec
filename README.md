@@ -2,6 +2,8 @@
 
 PatRec is a Flask Web App that allows you to scan a set of images for a given pattern. 
 
+![screenshot](https://github.com/batzner/patrec/raw/master/img/screenshot.png)
+
 It uses an ensemble of Feature Descriptors to identify the pattern in each of the given images. Thus it achieves a high accuracy without having to train the ensemble.
 
 ## Installation

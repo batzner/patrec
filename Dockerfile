@@ -1,6 +1,6 @@
 FROM ubuntu
 
-MAINTAINER Felix Schober <mail@felix-schober.de>
+MAINTAINER Kilian Batzner <info@kilians.net>
 
 # update repositories
 RUN apt-get update

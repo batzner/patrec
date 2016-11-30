@@ -9,7 +9,7 @@ It uses an ensemble of Feature Descriptors to identify the pattern in each of th
 ## Installation
 There are three options to run PatRec in your browser:
 
-#### 1. Docker (Docker Hub) - (recommend)
+#### 1. Docker (Docker Hub) - (recommended)
 Run `docker run -p 5000:80 jorba/patrec`. This will automatically pull the latest patrec image from Docker Hub (http://hub.docker.com).
 The image size is 3 GB. This option is the fastest way if you do not have OpenCV 2.4.X installed.
 

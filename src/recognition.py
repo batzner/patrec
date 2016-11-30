@@ -6,588 +6,686 @@ import os
 import uuid
 import csv
 
+# Resolution of each image
 image_resolution = 250000
+
+# size of the bag of words used for sift_similarity_score
 bag_of_words_size = 20
+
+# histogram parameters:
+# segments image into 4 segments for histogram distance calculation
 histogram_image_segments = 4
+
+# number of bins for each color-channel histogram for each segment
 histogram_number_of_bins = 8
+
+# color range for the histogram
 histogram_color_range = [0, 256]
+
+# scale the histogram to [0, 1]
 histogram_scale_hist = False
+
+# applies a sliding window if no matches were found for the complete image.
 apply_sliding_window = False
 
 
 class PatternRecognition(object):
-    def __init__(self, images, pattern):
-        # convert to numpy array and equilize image size so that each image has the same number of pixels.
-        self.images_color = [equalize_image_size(np.array(image), image_resolution) for image in images if
-                             not image is None and len(image) > 0]
-        self.pattern_color = equalize_image_size(np.array(pattern), image_resolution)
-        # self.images_gray = self.images_color
-        # self.pattern_gray = self.pattern_color
-        # convert to grayscale for SIFT
-        self.images_gray = [cv.cvtColor(image, cv.COLOR_BGR2GRAY) for image in self.images_color]
-        self.pattern_gray = cv.cvtColor(self.pattern_color, cv.COLOR_BGR2GRAY)
+	def __init__(self, images, pattern):
+		# convert to numpy array and equalize image size so that each image has the same number of pixels.
+		self.images_color = [equalize_image_size(np.array(image), image_resolution) for image in images if
+		                     not image is None and len(image) > 0]
+		self.pattern_color = equalize_image_size(np.array(pattern), image_resolution)
 
-        self.sift = cv.SIFT()
-        self.bow = None
-        self.pattern_sift_keypoints = []
-        self.pattern_sift_descriptors = []
-        self.pattern_bow_features = []
-        self.pattern_color_features = []
+		# convert to greyscale for SIFT
+		self.images_gray = [cv.cvtColor(image, cv.COLOR_BGR2GRAY) for image in self.images_color]
+		self.pattern_gray = cv.cvtColor(self.pattern_color, cv.COLOR_BGR2GRAY)
 
-    def initialize(self):
-        # calculate a bag of words for the given images.
-        self.bow = self.__calculate_bow_for_images()
+		self.sift = cv.SIFT()
+		self.bow = None
+		self.pattern_sift_keypoints = []
+		self.pattern_sift_descriptors = []
+		self.pattern_bow_features = []
+		self.pattern_color_features = []
 
-        # compute SIFT keypoints and bag of words feature for the pattern.
-        # this is used to calculate a similarity score between the query_images and the pattern.
-        # however, the effectiveness depends on the number of images that are used.
-        self.pattern_sift_keypoints, self.pattern_sift_descriptors = self.sift.detectAndCompute(self.pattern_gray, None)
-        self.pattern_bow_features = self.bow.compute_feature_vector(self.pattern_gray, self.pattern_sift_keypoints)
-        self.pattern_color_features = self.__create_color_histogram_feature_vector(self.pattern_color)
-        return True
+	def initialize(self):
+		# calculate a bag of words for the given images.
+		self.bow = self.__calculate_bow_for_images()
 
-    def is_match(self, image_color, mark_match=True):
-        """
-        Tries to find the pattern for the given query_image.
-        Returns True, [corners] if pattern is matched and False, None if the query_image does not contain the pattern.
-        """
+		# compute SIFT keypoints and bag of words feature for the pattern.
+		# this is used to calculate a similarity score between the query_images and the pattern.
+		# however, the effectiveness depends on the number of images that are used.
+		self.pattern_sift_keypoints, self.pattern_sift_descriptors = self.sift.detectAndCompute(self.pattern_gray, None)
+		self.pattern_bow_features = self.bow.compute_feature_vector(self.pattern_gray, self.pattern_sift_keypoints)
+		self.pattern_color_features = self.__create_color_histogram_feature_vector(self.pattern_color)
+		return True
 
-        image_gray = cv.cvtColor(image_color, cv.COLOR_RGB2GRAY)
+	def is_match(self, image_color, mark_match=False):
+		"""
+		Tries to find the pattern for the given query_image.
+		When mark_match is True it will mark the matches. This will _not_ work inside a docker container.
+		Returns True, {scores} if pattern is matched and False, {scores} if the image_color does not contain the pattern.
+		:param image_color: color version of the image
+		:param mark_match: whether or not a window with the matches should be displayed. (does not work with docker containers)
+		:return: (match, {scores})
+		"""
 
-        # calculate SIFT keypoints and descriptors for query_image
-        img_sift_kp, img_sift_desc = self.sift.detectAndCompute(image_gray, None)
+		image_gray = cv.cvtColor(image_color, cv.COLOR_RGB2GRAY)  # calculate SIFT keypoints and descriptors for query_image
+		img_sift_kp, img_sift_desc = self.sift.detectAndCompute(image_gray, None)
 
-        # if no sift keypoints could be found there is no match
-        if len(img_sift_kp) == 0:
-            return (False, {'match_ratio_score': 0, 'mean_distance_score': 10000, 'sift_similarity_score': 10000,
-                            'color_similarity_score': 10000, 'votes': -1000, 'num_filtered_keypoints': 0})
+		# if no sift keypoints could be found there is no match
+		if len(img_sift_kp) == 0:
+			return (False, {'match_ratio_score': 0, 'mean_distance_score': 10000, 'sift_similarity_score': 10000,
+			                'color_similarity_score': 10000, 'votes': -1000, 'num_filtered_keypoints': 0})
 
-        sift_similarity_score = self.__calculate_sift_score(image_gray, img_sift_kp)
-        color_similarity_score = self.__calculate_color_score(image_color)
+		sift_similarity_score = self.__calculate_sift_score(image_gray, img_sift_kp)
+		color_similarity_score = self.__calculate_color_score(image_color)
 
-        # find matches with BruteForce Matcher and get the two best matches.
-        # distance measurement is Norm_L2 which is the euclidean distance.
-        bf = cv.BFMatcher()
-        matches = bf.knnMatch(img_sift_desc, self.pattern_sift_descriptors, k=2)
-        # apply ratio test as reccomended in D. G. Lowe. "Object recognition from local scale-invariant features."
-        # ratio is slightly altered from original paper.
-        good_matches = []
-        matched_keypoints = []
-        distances = []
+		# find matches with BruteForce Matcher and get the two best matches.
+		# distance measurement is Norm_L2 which is the euclidean distance.
+		bf = cv.BFMatcher()
+		matches = bf.knnMatch(img_sift_desc, self.pattern_sift_descriptors, k=2)
 
-        # count how many times a certain keypoint in the pattern image is matched against
-        # if it is matched against many times, that means that this keypoint might be too general
-        keypoint_matches = np.zeros((len(self.pattern_sift_keypoints)))
+		# apply ratio test as reccomended in D. G. Lowe. "Object recognition from local scale-invariant features."
+		# ratio is slightly altered from original paper.
+		good_matches = []
+		matched_keypoints = []
+		distances = []
 
-        for m, n in matches:
-            if m.distance < 0.75 * n.distance:
-                # Do not add a keypoint if it already has 4 matches
-                if keypoint_matches[m.trainIdx] >= 4:
-                    continue
+		# count how many times a certain keypoint in the pattern image is matched against
+		# if it is matched against many times, that means that this keypoint might be too general
+		keypoint_matches = np.zeros((len(self.pattern_sift_keypoints)))
 
-                keypoint_matches[m.trainIdx] += 1
-                distances.append(m.distance)
-                good_matches.append([m])
-                matched_keypoints.append(img_sift_kp[m.queryIdx])
+		for m, n in matches:
+			if m.distance < 0.75 * n.distance:
+				# Do not add a keypoint if it already has 4 matches
+				if keypoint_matches[m.trainIdx] >= 4:
+					continue
 
-        # print keypoint_scores
-        match_ratio_score = float(len(good_matches)) / (float(len(matches)) + 1e-10)  # 1e-10 to prevent 0-div
+				keypoint_matches[m.trainIdx] += 1
+				distances.append(m.distance)
+				good_matches.append([m])
+				matched_keypoints.append(img_sift_kp[m.queryIdx])
 
-        if len(distances) > 0:
-            mean_distance_score = np.mean(distances)
-        else:
-            mean_distance_score = 10000
+		# print keypoint_scores
+		match_ratio_score = float(len(good_matches)) / (float(len(matches)) + 1e-10)  # 1e-10 to prevent 0-div
 
-        filtered_keypoints = self.__eliminate_closest_neighbor_noise(matched_keypoints)
-        number_of_filtered_keypoints = len(filtered_keypoints)
-        # vote casting
-        votes = 0
-        if match_ratio_score > 0.020 and len(matched_keypoints) >= 3:
-            votes += match_ratio_score * 300
-        if number_of_filtered_keypoints > 4:
-            votes += 0.3 * number_of_filtered_keypoints
-        if mean_distance_score < 180:
-            votes += 2
-        if mean_distance_score > 210:
-            votes -= ((210 - mean_distance_score) / 4) * (-1)
-        if sift_similarity_score < 0.9:
-            votes += ((sift_similarity_score - 0.6) * 15) * (-1)
-        if color_similarity_score > 0.35:
-            votes += 5
+		if len(distances) > 0:
+			mean_distance_score = np.mean(distances)
+		else:
+			mean_distance_score = 10000
 
-        if votes > 9:
-            # match
+		filtered_keypoints = self.__eliminate_closest_neighbor_noise(matched_keypoints)
+		number_of_filtered_keypoints = len(filtered_keypoints)
 
-            # if mark_match:
-            # 	# filter "outlier" keypoints that are likely not part of the real object
-            #
-            # 	# image_color = cv.cvtColor(image_color, cv.COLOR_RGB2BGR)
-            # 	# image_color = cv.drawKeypoints(image_color, matched_keypoints)
-            # 	img_matches = visulize_matches(good_matches, self.pattern_sift_keypoints, img_sift_kp,
-            # 	                               self.pattern_gray, image_gray)
-            # 	cv.imshow(
-            # 		'[{0}] - MR: {1:.3f} - Mean Dist: {2:.1f} - SI Bow Score: {3:.3f} - Color Score: {4:.3f} - Matches: {5}'.format(
-            # 			votes, match_ratio_score, mean_distance_score, sift_similarity_score, color_similarity_score,
-            # 			len(good_matches)), img_matches)
-            # 	cv.waitKey(0)
-            # 	cv.destroyAllWindows()
+		# vote casting
+		votes = 0
+		if match_ratio_score > 0.020 and len(matched_keypoints) >= 3:
+			votes += match_ratio_score * 300
+		if number_of_filtered_keypoints > 4:
+			votes += 0.3 * number_of_filtered_keypoints
+		if mean_distance_score < 180:
+			votes += 2
+		if mean_distance_score > 210:
+			votes -= ((210 - mean_distance_score) / 4) * (-1)
+		if sift_similarity_score < 0.9:
+			votes += ((sift_similarity_score - 0.6) * 15) * (-1)
+		if color_similarity_score > 0.35:
+			votes += 5
 
-            return (True, {'match_ratio_score': match_ratio_score, 'mean_distance_score': mean_distance_score,
-                           'sift_similarity_score': sift_similarity_score,
-                           'color_similarity_score': color_similarity_score, 'votes': votes,
-                           'num_filtered_keypoints': number_of_filtered_keypoints})
-        else:
-            # no match
-            # image_color = cv.cvtColor(image_color, cv.COLOR_RGB2BGR)
-            # if mark_match:
-            # cv.imshow('[-] - MR: {0:.3f} - Mean Dist: {1:.1f} - SI Bow Score: {2:.3f} - Color Score: {3:.3f}'.format(match_ratio_score, mean_distance_score, sift_similarity_score, color_similarity_score), image_color)
+		if votes > 9:
+			# match
 
-            return (False, {'match_ratio_score': match_ratio_score, 'mean_distance_score': mean_distance_score,
-                            'sift_similarity_score': sift_similarity_score,
-                            'color_similarity_score': color_similarity_score, 'votes': votes,
-                            'num_filtered_keypoints': number_of_filtered_keypoints})
+			if mark_match:
+				img_matches = visulize_matches(good_matches, self.pattern_sift_keypoints, img_sift_kp, self.pattern_gray,
+				                               image_gray)
+				cv.imshow(
+					'[{0}] - MR: {1:.3f} - Mean Dist: {2:.1f} - SI Bow Score: {3:.3f} - Color Score: {4:.3f} - Matches: {5}'.format(
+						votes, match_ratio_score, mean_distance_score, sift_similarity_score, color_similarity_score,
+						len(good_matches)), img_matches)
+				cv.waitKey(0)
+				cv.destroyAllWindows()
 
-    def next(self):
-        for image in self.images_color:
-            if not apply_sliding_window:
-                yield self.is_match(image)
-            else:
-                is_match, score = self.is_match(image)  # first, match whole image
-                if is_match:
-                    yield is_match, score
-                    continue
+			return (True, {'match_ratio_score': match_ratio_score, 'mean_distance_score': mean_distance_score,
+			               'sift_similarity_score': sift_similarity_score,
+			               'color_similarity_score': color_similarity_score, 'votes': votes,
+			               'num_filtered_keypoints': number_of_filtered_keypoints})
+		else:
+			# no match
 
-                # if whole image matching was not succesful, match sliding window
-                matches = []
-                scores = []
-                window_visualization = cv.cvtColor(image, cv.COLOR_RGB2BGR)
+			if mark_match:
+				cv.imshow('[-] - MR: {0:.3f} - Mean Dist: {1:.1f} - SI Bow Score: {2:.3f} - Color Score: {3:.3f}'.format(
+					match_ratio_score, mean_distance_score, sift_similarity_score, color_similarity_score), image_color)
 
-                for image_region, image_part in sliding_window(image, size=(100, 100), stride=100):
-                    # increase size of sliding window part
-                    image_part = equalize_image_size(image_part, image_resolution)
-                    is_match, part_score = self.is_match(image_part, True)
-                    scores.append([part_score['match_ratio_score'], part_score['mean_distance_score'],
-                                   part_score['sift_similarity_score'], part_score['color_similarity_score'],
-                                   part_score['votes'], part_score['num_filtered_keypoints']])
-                    if is_match:
-                        matches.append(True)
-                        window_visualization = image_region.overlay_rectangle(window_visualization)
-                    else:
-                        matches.append(False)
-                # cv.imshow("Matches: {0} - Votes: {1}".format(np.sum(matches), np.sum(votes)), window_visualization)
-                # take the score with the most votes and return it
-                scores = np.array(scores)
-                votes_vector = scores[:, 4]
-                best_vote_idx = np.argmax(votes_vector)
-                best_vote_score = scores[best_vote_idx]
-                best_vote_score_dict = {'match_ratio_score': best_vote_score[0],
-                                        'mean_distance_score': best_vote_score[1],
-                                        'sift_similarity_score': best_vote_score[2],
-                                        'color_similarity_score': best_vote_score[3], 'votes': best_vote_score[4],
-                                        'num_filtered_keypoints': best_vote_score[5]}
+			return (False, {'match_ratio_score': match_ratio_score, 'mean_distance_score': mean_distance_score,
+			                'sift_similarity_score': sift_similarity_score,
+			                'color_similarity_score': color_similarity_score, 'votes': votes,
+			                'num_filtered_keypoints': number_of_filtered_keypoints})
 
-                yield np.any(matches), best_vote_score_dict
 
-    def __calculate_sift_score(self, image, img_sift_kp):
-        # if no keypoints were found return a bad sift score
-        if len(img_sift_kp) == 0:
-            return 10000
+	def next(self):
+		"""
+		Yields the next match result for the images.
+		If sliding window is True this method will apply a sliding window if the whole image does not match.
+		"""
+		for image in self.images_color:
+			if not apply_sliding_window:
+				yield self.is_match(image)
+			else:
+				is_match, score = self.is_match(image)  # first, match whole image
+				if is_match:
+					yield is_match, score
+					continue
 
-        # get bow features for image
-        img_bow_sift_desc = self.bow.compute_feature_vector(image, img_sift_kp)
-        return self.__calculate_norm_distance(self.pattern_bow_features, img_bow_sift_desc)
+				# if whole image matching was not successful, match sliding window
+				matches = []
+				scores = []
+				window_visualization = cv.cvtColor(image, cv.COLOR_RGB2BGR)
 
-    def __calculate_color_score(self, image):
-        image_color_feature = self.__create_color_histogram_feature_vector(image)
+				for image_region, image_part in sliding_window(image, size=(100, 100), stride=100):
+					# increase size of sliding window part
+					image_part = equalize_image_size(image_part, image_resolution)
+					is_match, part_score = self.is_match(image_part, True)
+					scores.append([part_score['match_ratio_score'], part_score['mean_distance_score'],
+					               part_score['sift_similarity_score'], part_score['color_similarity_score'],
+					               part_score['votes'], part_score['num_filtered_keypoints']])
+					if is_match:
+						matches.append(True)
+						window_visualization = image_region.overlay_rectangle(window_visualization)
+					else:
+						matches.append(False)
 
-        color_score = self.__calculate_norm_distance(self.pattern_color_features, image_color_feature)
-        color_score = 1 - (color_score / 164000)
+				# take the score with the most votes and return it
+				scores = np.array(scores)
+				votes_vector = scores[:, 4]
+				best_vote_idx = np.argmax(votes_vector)
+				best_vote_score = scores[best_vote_idx]
+				best_vote_score_dict = {'match_ratio_score': best_vote_score[0],
+				                        'mean_distance_score': best_vote_score[1],
+				                        'sift_similarity_score': best_vote_score[2],
+				                        'color_similarity_score': best_vote_score[3], 'votes': best_vote_score[4],
+				                        'num_filtered_keypoints': best_vote_score[5]}
 
-        return color_score
+				yield np.any(matches), best_vote_score_dict
 
-    def __create_color_histogram_feature_vector(self, image):
-        image_cols = image_rows = sqrt(histogram_image_segments)
 
-        # split image into x different parts. (default 4 parts)
-        image_parts = []
-        colors = ("r", "g", "b")
-        height, width = image.shape[:2]
-        part_height = int(height / image_rows)
-        part_width = int(width / image_cols)
-        scale_max_possible_value = part_width * part_height
+	def __calculate_sift_score(self, image, img_sift_kp):
+		"""
+		Calculates SIFT score for all SIFT-BOW-Feature Vectors
+		:param image: query image
+		:param img_sift_kp: keypoints for the query image
+		:return: euclidean distance of pattern and image.
+		"""
 
-        # modify height and width in case part_height and part_width don't add up to the real width and height.
-        # in this case the image would be cut into more than x parts because some leftover pixels would be included.
-        height = int(part_height * image_rows)
-        width = int(part_width * image_cols)
+		# if no keypoints were found return a bad sift score
+		if len(img_sift_kp) == 0:
+			return 10000
 
-        for y in xrange(0, height, part_height):
-            for x in xrange(0, width, part_width):
-                image_parts.append(crop_image(image, x, y, part_width, part_height))
+		# get bow features for image
+		img_bow_sift_desc = self.bow.compute_feature_vector(image, img_sift_kp)
+		return self.__calculate_norm_distance(self.pattern_bow_features, img_bow_sift_desc)
 
-        histogram = []
-        for img in image_parts:
-            for i, color in enumerate(colors):
-                hist = cv.calcHist([img], [i], None, [histogram_number_of_bins], histogram_color_range)
 
-                if histogram_scale_hist:
-                    # max possible value is w * h of imagePart
-                    hist /= scale_max_possible_value
-                histogram.extend(hist)
-        return np.array(np.concatenate(histogram))
+	def __calculate_color_score(self, image):
+		"""
+		Calculates Color Histogram score for all image Color Segments
+		:param image: query image
+		:return: normed euclidean distance of pattern and image.
+		"""
 
-    def __calculate_chi2_distance(self, f1, f2, eps=1e-10):
-        try:
-            d = np.sum([((a - b) ** 2) / (a + b + eps) for (a, b) in zip(f1, f2)])
-        except:
-            # app.logger.debug('Could not calculate Chi2 distance: F1 {0} - F2 {1}'.format(f1, f2))
-            d = 1000
-        return d
+		image_color_feature = self.__create_color_histogram_feature_vector(image)
 
-    def __calculate_norm_distance(self, f1, f2):
-        try:
-            d = metrics.euclidean_distances(f1.reshape(1, -1), f2.reshape(1, -1))
-        except:
-            # app.logger.debug('Could not calculate Chi2 distance: F1 {0} - F2 {1}'.format(f1, f2))
-            d = 1000
-        return d[0][0]
+		color_score = self.__calculate_norm_distance(self.pattern_color_features, image_color_feature)
+		color_score = 1 - (color_score / 164000)
 
-    def __calculate_bow_for_images(self):
+		return color_score
 
-        # app.logger.debug('Setting up descriptor dictionary.')
 
-        # calculate SIFT descriptors for each image
-        descriptors = []
-        for image in self.images_gray:
-            descriptors.append(self.sift.detectAndCompute(image, None)[1])
-        descriptors.append(self.sift.detectAndCompute(self.pattern_gray, None)[1])
+	def __create_color_histogram_feature_vector(self, image):
+		"""
+		Creates the color histogram feature vector for the image.
+		:param image: query image
+		:return: concatenated numpy array of the color histograms.
+		"""
 
-        bow = BagOfWords(bag_of_words_size)
-        bow.create_BOW(descriptors)
+		image_cols = image_rows = sqrt(histogram_image_segments)
 
-        return bow
+		# split image into x different parts. (default 4 parts)
+		image_parts = []
+		colors = ("r", "g", "b")
+		height, width = image.shape[:2]
+		part_height = int(height / image_rows)
+		part_width = int(width / image_cols)
+		scale_max_possible_value = part_width * part_height
 
-    def __eliminate_closest_neighbor_noise(self, keypoints):
-        """
-        This method tries to eliminate "outlier" keypoints by comparing the distance to their closest neighbors.
+		# modify height and width in case part_height and part_width don't add up to the real width and height.
+		# in this case the image would be cut into more than x parts because some leftover pixels would be included.
+		height = int(part_height * image_rows)
+		width = int(part_width * image_cols)
+
+		for y in xrange(0, height, part_height):
+			for x in xrange(0, width, part_width):
+				image_parts.append(crop_image(image, x, y, part_width, part_height))
+
+		histogram = []
+		for img in image_parts:
+			for i, color in enumerate(colors):
+				hist = cv.calcHist([img], [i], None, [histogram_number_of_bins], histogram_color_range)
+
+				if histogram_scale_hist:
+					# max possible value is w * h of imagePart
+					hist /= scale_max_possible_value
+				histogram.extend(hist)
+		return np.array(np.concatenate(histogram))
+
+
+	def __calculate_chi2_distance(self, f1, f2, eps=1e-10):
+		"""
+		Chi squared distance of two vectors.
+		(Alternative to norm distance)
+		:param f1: vector 1
+		:param f2: vector 2
+		:param eps: epsilon to prevent zero div
+		:return: Chi squared distance
+		"""
+		try:
+			d = np.sum([((a - b) ** 2) / (a + b + eps) for (a, b) in zip(f1, f2)])
+		except:
+			# app.logger.debug('Could not calculate Chi2 distance: F1 {0} - F2 {1}'.format(f1, f2))
+			d = 1000
+		return d
+
+
+	def __calculate_norm_distance(self, f1, f2):
+		"""
+		Chi squared distance of two vectors.
+		(Alternative to Chi squared distance)
+		:param f1: vector 1
+		:param f2: vector 2
+		:return: norm distance
+		"""
+		try:
+			d = metrics.euclidean_distances(f1.reshape(1, -1), f2.reshape(1, -1))
+		except:
+			# app.logger.debug('Could not calculate Chi2 distance: F1 {0} - F2 {1}'.format(f1, f2))
+			return 1000
+		return d[0][0]
+
+	def __calculate_bow_for_images(self):
+		"""
+		Calculates a bag of words for all images.
+		:return: instance of the bow.
+		"""
+
+		# calculate SIFT descriptors for each image
+		descriptors = []
+		for image in self.images_gray:
+			descriptors.append(self.sift.detectAndCompute(image, None)[1])
+		descriptors.append(self.sift.detectAndCompute(self.pattern_gray, None)[1])
+
+		bow = BagOfWords(bag_of_words_size)
+		bow.create_BOW(descriptors)
+
+		return bow
+
+	def __eliminate_closest_neighbor_noise(self, keypoints):
+		"""
+		This method tries to eliminate "outlier" keypoints by comparing the distance to their closest neighbors.
         If the distance is greater than the median - std distance the keypoints are filtered out.
-        Distance is measured by Norm_L2
-        """
+        Distance is measured by Norm_L2.
+		:param self:
+		:param keypoints: matched keypoints
+		:return: filtered keypoints
+		"""
 
-        if len(keypoints) == 0:
-            return keypoints
+		if len(keypoints) == 0:
+			return keypoints
 
-        # convert keypoint list to point list
-        keypoint_point_list = [kp.pt for kp in keypoints]
+		# convert keypoint list to point list
+		keypoint_point_list = [kp.pt for kp in keypoints]
 
-        # compute pairwise distance
-        distance_matrix = metrics.pairwise_distances(keypoint_point_list)
-        d_mean = distance_matrix.mean()
-        d_std = distance_matrix.std()
+		# compute pairwise distance
+		distance_matrix = metrics.pairwise_distances(keypoint_point_list)
+		d_mean = distance_matrix.mean()
+		d_std = distance_matrix.std()
 
-        # iterate over all keypoints and filter outliers
-        filtered_keypoints = []
-        for i in xrange(len(keypoints)):
-            # get the mean distance of the 8 closest neighbors of kp or all neigbors
-            k = min(len(distance_matrix[i]), 8)
-            neighbor_distances = np.partition(distance_matrix[i], k - 1)[:k - 1]
-            # filter 0-distance to point itself
-            neighbor_distances = neighbor_distances[np.nonzero(neighbor_distances)]
-            if len(neighbor_distances) == 0:
-                return []
-            mean_neighbor_distance = neighbor_distances.mean()
+		# iterate over all keypoints and filter outliers
+		filtered_keypoints = []
+		for i in xrange(len(keypoints)):
+			# get the mean distance of the 8 closest neighbors of kp or all neigbors
+			k = min(len(distance_matrix[i]), 8)
+			neighbor_distances = np.partition(distance_matrix[i], k - 1)[:k - 1]
+			# filter 0-distance to point itself
+			neighbor_distances = neighbor_distances[np.nonzero(neighbor_distances)]
+			if len(neighbor_distances) == 0:
+				return []
+			mean_neighbor_distance = neighbor_distances.mean()
 
-            if mean_neighbor_distance <= d_mean - d_std:
-                filtered_keypoints.append(keypoints[i])
+			if mean_neighbor_distance <= d_mean - d_std:
+				filtered_keypoints.append(keypoints[i])
 
-        return filtered_keypoints
-
-
-# def find_matches(images, pattern):
-#    result = []
-#    pr = PatternRecognition(images, pattern)
-#    pr.initialize()    
-
-#    # Search for pattern matches
-#    for is_match, scores in pr.next():
-
-#        if is_match:
-#            app.logger.info('[X] Match.\tMatch Ratio: {0:.3f} - Mean Distance: {1:.3f} - Sift Bow Similarity: {2:.3f}'.format(scores['match_ratio_score'], scores['mean_distance_score'], scores['sift_similarity_score']))
-#        else:
-#            app.logger.info('[-] No Match.\tMatch Ratio: {0:.3f} - Mean Distance: {1:.3f} - Sift Bow Similarity: {2:.3f}'.format(scores['match_ratio_score'], scores['mean_distance_score'], scores['sift_similarity_score']))
-
-#        result.append({'value': scores['match_ratio_score'], 'is_match': is_match})
-#    #cv.waitKey(0)
-#    return result
+		return filtered_keypoints
 
 
 def find_matches(images, pattern):
-    result = []
-    pr = PatternRecognition(images, pattern)
-    pr.initialize()
-    csv_result = [['Match', 'match_ratio_score', 'mean_distance_score', 'sift_similarity_score', 'votes',
-                   'num_filtered_keypoints', 'color_similarity_score']]
-    # Search for pattern matches
-    for is_pattern, scores in pr.next():
-        # cv.waitKey(0)
-        # cv.destroyAllWindows()
-        if is_pattern:
-            result.append({'value': scores['votes'], 'is_match': True})
-            print '[X] Match.\t\tMatch Ratio: {0:.3f} - Mean Distance: {1:.3f} - Sift Bow Similarity: {2:.3f} - Votes: {3:.3f} - Color: {4:.3f} - Num Keypoints: {5:.3f}'.format(
-                scores['match_ratio_score'], scores['mean_distance_score'], scores['sift_similarity_score'],
-                scores['votes'], scores['color_similarity_score'], scores['num_filtered_keypoints'])
-        else:
-            print '[-] No Match.\tMatch Ratio: {0:.3f} - Mean Distance: {1:.3f} - Sift Bow Similarity: {2:.3f} - Votes: {3:.3f} - Color: {4:.3f} - Num Keypoints: {5:.3f}'.format(
-                scores['match_ratio_score'], scores['mean_distance_score'], scores['sift_similarity_score'],
-                scores['votes'], scores['color_similarity_score'], scores['num_filtered_keypoints'])
-            result.append({'value': scores['votes'], 'is_match': False})
+	"""
+	Entrypoint for the recognition.
+	:param images: list of images
+	:param pattern: pattern to test against.
+	:return: list of results
+	"""
 
-        csv_result.append(
-            [is_pattern, scores['match_ratio_score'], scores['mean_distance_score'], scores['sift_similarity_score'],
-             scores['votes'], scores['color_similarity_score'], scores['num_filtered_keypoints']])
-    csve = CsvExporter()
-    try:
-        csve.export(csv_result)
-    except:
-        pass
-    return result
+
+	result = []
+	pr = PatternRecognition(images, pattern)
+	pr.initialize()
+	csv_result = [['Match', 'match_ratio_score', 'mean_distance_score', 'sift_similarity_score', 'votes',
+	               'num_filtered_keypoints', 'color_similarity_score']]
+	# Search for pattern matches
+	for is_pattern, scores in pr.next():
+		# cv.waitKey(0)
+		# cv.destroyAllWindows()
+		if is_pattern:
+			result.append({'value': scores['votes'], 'is_match': True})
+			print '[X] Match.\t\tMatch Ratio: {0:.3f} - Mean Distance: {1:.3f} - Sift Bow Similarity: {2:.3f} - Votes: {3:.3f} - Color: {4:.3f} - Num Keypoints: {5:.3f}'.format(
+				scores['match_ratio_score'], scores['mean_distance_score'], scores['sift_similarity_score'],
+				scores['votes'], scores['color_similarity_score'], scores['num_filtered_keypoints'])
+		else:
+			print '[-] No Match.\tMatch Ratio: {0:.3f} - Mean Distance: {1:.3f} - Sift Bow Similarity: {2:.3f} - Votes: {3:.3f} - Color: {4:.3f} - Num Keypoints: {5:.3f}'.format(
+				scores['match_ratio_score'], scores['mean_distance_score'], scores['sift_similarity_score'],
+				scores['votes'], scores['color_similarity_score'], scores['num_filtered_keypoints'])
+			result.append({'value': scores['votes'], 'is_match': False})
+
+		csv_result.append(
+			[is_pattern, scores['match_ratio_score'], scores['mean_distance_score'], scores['sift_similarity_score'],
+			 scores['votes'], scores['color_similarity_score'], scores['num_filtered_keypoints']])
+	csve = CsvExporter()
+	try:
+		csve.export(csv_result)
+	except:
+		pass
+	return result
 
 
 def equalize_image_size(image, size):
-    """ Resizes the image to fit the given size."""
-    # print image.shape
-    # image size
-    w, h = (image.shape[1], image.shape[0])
+	"""
+	Resizes the image to fit the given size.
+	:param image: image to resize
+	:param size: new resolution for image
+	:return: resized image
+	"""
 
-    if (w * h) != size:
-        # calculate factor so that we can resize the image. The total size of the image (w*h) should be ~ size.
-        # w * x * h * x = size
-        ls = float(h * w)
-        ls = float(size) / ls
-        factor = sqrt(ls)
-        image = cv.resize(image, (0, 0), fx=factor, fy=factor)
+	# image size
 
-    return image
+
+	w, h = (image.shape[1], image.shape[0])
+
+	if (w * h) != size:
+		# calculate factor so that we can resize the image. The total size of the image (w*h) should be ~ size.
+		# w * x * h * x = size
+		ls = float(h * w)
+		ls = float(size) / ls
+		factor = sqrt(ls)
+		image = cv.resize(image, (0, 0), fx=factor, fy=factor)
+
+	return image
 
 
 def crop_image(image, x, y, w, h):
-    """ Crops an image.
+	"""
+	Crops an image.
+	:param image: image to crop
+	:param x: upper left x-coordinate
+	:param y: upper left y-coordinate
+	:param w: width of the cropping window
+	:param h: height of the cropping window
+	:return: cropped image
+	"""
 
-    Keyword arguments:
-    image -- image to crop
-    x -- upper left x-coordinate
-    y -- upper left y-coordinate
-    w -- width of the cropping window
-    h -- height of the cropping window
-    """
-
-    # crop image using np slicing (http://stackoverflow.com/questions/15589517/how-to-crop-an-image-in-opencv-using-python)
-    image = image[y: y + h, x: x + w]
-    return image
+	# crop image using np slicing (http://stackoverflow.com/questions/15589517/how-to-crop-an-image-in-opencv-using-python)
+	image = image[y: y + h, x: x + w]
+	return image
 
 
 def get_uuid():
-    """ Generates a unique string id."""
-
-    x = uuid.uuid1()
-    return str(x)
+	""" Generates a unique string id."""
+	x = uuid.uuid1()
+	return str(x)
 
 
 def sliding_window(image, size, stride):
-    for y in xrange(0, image.shape[0], stride):
-        for x in xrange(0, image.shape[1], stride):
-            roi = ImageRegion(upper_left=(x, y), lower_right=(x + size[0], y + size[1]))
-            yield roi, crop_image(image, x, y, size[0], size[1])
+	"""
+	Yields a sliding window part of an image
+	:param image: the image the sliding window is applied on
+	:param size: size of the sliding window
+	:param stride: stride of the sliding window
+	:return: Sliding Window Generator (yield)
+	"""
+	for y in xrange(0, image.shape[0], stride):
+		for x in xrange(0, image.shape[1], stride):
+			roi = ImageRegion(upper_left=(x, y), lower_right=(x + size[0], y + size[1]))
+			yield roi, crop_image(image, x, y, size[0], size[1])
 
 
 def visulize_matches(matches, k2, k1, img2, img1):
-    """ Visualize SIFT keypoint matches."""
+	"""
+	Visualize SIFT keypoint matches.
+	:param matches: list of matches
+	:param k2: keypoints of img1
+	:param k1: keypoints of img2
+	:param img2: second image
+	:param img1: first image
+	:return: BGR representation of the matches.
+	"""
 
-    import scipy as sp
-    img2 = cv.cvtColor(img2, cv.COLOR_GRAY2BGR)
-    img1 = cv.cvtColor(img1, cv.COLOR_GRAY2BGR)
-    h1, w1 = img1.shape[:2]
-    h2, w2 = img2.shape[:2]
-    view = sp.zeros((max(h1, h2), w1 + w2, 3), sp.uint8)
-    view[:h1, :w1, :] = img1
-    view[:h2, w1:, :] = img2
-    view[:, :, 1] = view[:, :, 0]
-    view[:, :, 2] = view[:, :, 0]
+	import scipy as sp
+	img2 = cv.cvtColor(img2, cv.COLOR_GRAY2BGR)
+	img1 = cv.cvtColor(img1, cv.COLOR_GRAY2BGR)
+	h1, w1 = img1.shape[:2]
+	h2, w2 = img2.shape[:2]
+	view = sp.zeros((max(h1, h2), w1 + w2, 3), sp.uint8)
+	view[:h1, :w1, :] = img1
+	view[:h2, w1:, :] = img2
+	view[:, :, 1] = view[:, :, 0]
+	view[:, :, 2] = view[:, :, 0]
 
-    for m in matches:
-        m = m[0]
-        # draw the keypoints
-        # print m.queryIdx, m.trainIdx, m.distance
-        color = tuple([sp.random.randint(0, 255) for _ in xrange(3)])
-        pt1 = (int(k1[m.queryIdx].pt[0]), int(k1[m.queryIdx].pt[1]))
-        pt2 = (int(k2[m.trainIdx].pt[0] + w1), int(k2[m.trainIdx].pt[1]))
+	for m in matches:
+		m = m[0]
+		# draw the keypoints
+		color = tuple([sp.random.randint(0, 255) for _ in xrange(3)])
+		pt1 = (int(k1[m.queryIdx].pt[0]), int(k1[m.queryIdx].pt[1]))
+		pt2 = (int(k2[m.trainIdx].pt[0] + w1), int(k2[m.trainIdx].pt[1]))
 
-        cv.line(view, pt1, pt2, color)
-    return view
+		cv.line(view, pt1, pt2, color)
+	return view
 
 
 class BagOfWords(object):
-    """Wrapper for openCV Bag of words logic."""
+	"""Wrapper for openCV Bag of words logic."""
 
-    def __init__(self, size, dextractor='SIFT', dmatcher='FlannBased', vocabularyType=np.float32):
-        self.size = size
-        self.dextractor = dextractor
-        self.dmatcher = dmatcher
-        self.vocabularyType = vocabularyType
+	def __init__(self, size, dextractor='SIFT', dmatcher='FlannBased', vocabularyType=np.float32):
+		self.size = size
+		self.dextractor = dextractor
+		self.dmatcher = dmatcher
+		self.vocabularyType = vocabularyType
 
-    def create_BOW(self, descriptors):
-        """Computes a Bag of Words with a set of descriptors."""
+	def create_BOW(self, descriptors):
+		"""
+	    Computes a Bag of Words with a set of descriptors.
+	    :param descriptors: numpy array of image descriptors
+	    """
 
-        print 'Creating BOW with size {0} with {1} descriptors.'.format(self.size, len(descriptors))
-        bowTrainer = cv.BOWKMeansTrainer(self.size)
+		print 'Creating BOW with size {0} with {1} descriptors.'.format(self.size, len(descriptors))
+		bowTrainer = cv.BOWKMeansTrainer(self.size)
 
-        # Convert the list of numpy arrays to a single numpy array
-        npdescriptors = np.concatenate(descriptors)
+		# Convert the list of numpy arrays to a single numpy array
+		npdescriptors = np.concatenate(descriptors)
 
-        # an OpenCV BoW only takes floats as descriptors. convert if necessary
-        if not npdescriptors.dtype == np.float32:
-            npdescriptors = np.float32(npdescriptors)
+		# an OpenCV BoW only takes floats as descriptors. convert if necessary
+		if not npdescriptors.dtype == np.float32:
+			npdescriptors = np.float32(npdescriptors)
 
-        print 'Clustering BOW with Extractor {0} and Matcher {1}'.format(self.dextractor, self.dmatcher)
-        self.__BOWVocabulary = bowTrainer.cluster(npdescriptors)
+		print 'Clustering BOW with Extractor {0} and Matcher {1}'.format(self.dextractor, self.dmatcher)
+		self.__BOWVocabulary = bowTrainer.cluster(npdescriptors)
 
-        # need to convert vocabulary?
-        if self.__BOWVocabulary.dtype != self.vocabularyType:
-            self.__BOWVocabulary = self.__BOWVocabulary.astype(self.vocabularyType)
+		# need to convert vocabulary?
+		if self.__BOWVocabulary.dtype != self.vocabularyType:
+			self.__BOWVocabulary = self.__BOWVocabulary.astype(self.vocabularyType)
 
-        print 'BOW vocabulary creation finished.'
+		print 'BOW vocabulary creation finished.'
 
-        # Create the BoW descriptor
-        self.__BOWDescriptor = cv.BOWImgDescriptorExtractor(cv.DescriptorExtractor_create(self.dextractor),
-                                                            cv.DescriptorMatcher_create(self.dmatcher))
-        self.__BOWDescriptor.setVocabulary(self.__BOWVocabulary)
+		# Create the BoW descriptor
+		self.__BOWDescriptor = cv.BOWImgDescriptorExtractor(cv.DescriptorExtractor_create(self.dextractor),
+		                                                    cv.DescriptorMatcher_create(self.dmatcher))
+		self.__BOWDescriptor.setVocabulary(self.__BOWVocabulary)
 
-    def compute_feature_vector(self, image, keypoints):
-        return self.__BOWDescriptor.compute(image, keypoints)
+	def compute_feature_vector(self, image, keypoints):
+		return self.__BOWDescriptor.compute(image, keypoints)
 
 
 class ImageRegion(object):
-    """Class to represent an image region."""
+	"""Class to represent an image region."""
 
-    def __init__(self, contour=None, upper_left=None, lower_right=None, cutmask=None):
-        """ Creates an image Region object.
-        Region can be constructed by contour, combination of upperLeft and lowerRight or cutmask rectangle.
+	def __init__(self, contour=None, upper_left=None, lower_right=None, cutmask=None):
+		"""
+		Creates an image Region object.
+		Region can be constructed by contour, combination of upperLeft and lowerRight or cutmask rectangle.
+		:param contour: OpenCV contour
+		:param upper_left: Tuple of upperLeft Point coordinates
+		:param lower_right: Tuple of lowerRight Point coordinates
+		:param cutmask: rectangle of region
+		"""
 
-        Keyword arguments:
-        contour -- OpenCV contour
-        upperLeft -- Tuple of upperLeft Point coordinates
-        lowerRight -- Tuple of lowerRight Point coordinates
-        cutmask -- rectangle of region
-        """
+		if contour is None and cutmask is None and (upper_left is None or lower_right is None):
+			raise AttributeError('Either provide upperLeft and lowerRight or a cut mask')
 
-        if contour is None and cutmask is None and (upper_left is None or lower_right is None):
-            raise AttributeError('Either provide upperLeft and lowerRight or a cut mask')
+		self.contour = contour
 
-        self.contour = contour
+		if cutmask is None and upper_left is not None and lower_right is not None:
+			self.upper_left = upper_left
+			self.lower_right = lower_right
+			width = lower_right[0] - upper_left[0]
+			height = lower_right[1] - upper_left[1]
+			self.cutmask = Rectangle(upper_left, (width, height))
+		elif cutmask is not None:
+			self.cutmask = cutmask
+			self.upper_left = cutmask.upperLeft
+			self.lower_right = cutmask.lowerRight
+		else:
 
-        if cutmask is None and upper_left is not None and lower_right is not None:
-            self.upper_left = upper_left
-            self.lower_right = lower_right
-            width = lower_right[0] - upper_left[0]
-            height = lower_right[1] - upper_left[1]
-            self.cutmask = Rectangle(upper_left, (width, height))
-        elif cutmask is not None:
-            self.cutmask = cutmask
-            self.upper_left = cutmask.upperLeft
-            self.lower_right = cutmask.lowerRight
-        else:
+			x, y, w, h = cv.boundingRect(np.array([contour]))
 
-            x, y, w, h = cv.boundingRect(np.array([contour]))
+			self.cutmask = Rectangle((x, y), (w, h))
+			self.upper_left = self.cutmask.upper_left
+			self.lower_right = self.cutmask.lower_right
 
-            self.cutmask = Rectangle((x, y), (w, h))
-            self.upper_left = self.cutmask.upper_left
-            self.lower_right = self.cutmask.lower_right
 
-    def create_mask(self, shape):
-        """ Creates a mask for the image with the image region."""
+	def create_mask(self, shape):
+		"""
+		Creates a mask for the image with the image region.
+		:param self:
+		:param shape: shape of the image mask (tuple)
+		:return: image with mask
+		"""
 
-        # make sure shape is only 1 channel
-        shape = (shape[0], shape[1])
+		# make sure shape is only 1 channel
 
-        # create a new black image
-        mask = np.zeros(shape, dtype=np.uint8)
 
-        # draw the contour as a white filled area
-        cv.drawContours(mask, [self.contour], 0, (255, 255, 255), thickness=-1)
-        return mask
+		shape = (shape[0], shape[1])  # create a new black image
+		mask = np.zeros(shape, dtype=np.uint8)
 
-    def crop_image_region(self, image):
-        """ Crops an image to the given imageRegion and returns it.
-        """
-        x, y = self.upper_left
-        w, h = self.get_dimension()
-        return crop_image(image, x, y, w, h)
+		# draw the contour as a white filled area
+		cv.drawContours(mask, [self.contour], 0, (255, 255, 255), thickness=-1)
+		return mask
 
-    def get_roi_image(self, image):
-        """ Returns the image with only the image region visible."""
 
-        m = self.create_mask(image.shape)
-        # Apply the mask
-        return cv.bitwise_and(image, image, mask=m)
+	def crop_image_region(self, image):
+		"""
+		Crops an image to the given imageRegion and returns it.
+		:param self:
+		:param image: the image
+		:return:
+		"""
 
-    def overlay_rectangle(self, image, alpha=0.1, color=(0, 255, 0)):
-        """
-        Overlays a transparent rectangle.
+		x, y = self.upper_left
+		w, h = self.get_dimension()
+		return crop_image(image, x, y, w, h)
 
-        Keyword arguments:
-        image -- image to overlay the rectangle on
-        alpha -- alpha value of the rectangle
-        color -- BGR color of the rectangle
-        """
 
-        result = image.copy()
-        overlay = image.copy()
+	def get_roi_image(self, image):
+		"""
+		Returns the image with only the image region visible.
+		:param self:
+		:param image:
+		:return:
+		"""
 
-        cv.rectangle(overlay, self.upper_left, self.lower_right, color, -1)
+		m = self.create_mask(image.shape)
+		# Apply the mask
+		return cv.bitwise_and(image, image, mask=m)
 
-        cv.addWeighted(overlay, alpha, result, 1 - alpha, 0, result)
-        return result
 
-    def get_ratio(self):
-        """ Get the aspect ratio of height and width."""
-        return self.cutmask.height / self.cutmask.width
+	def overlay_rectangle(self, image, alpha=0.1, color=(0, 255, 0)):
+		"""
+		Overlays a transparent rectangle.
+		:param self:
+		:param image: image to overlay the rectangle on
+		:param alpha: alpha value of the rectangle
+		:param color: BGR color of the rectangle (default is green)
+		:return:
+		"""
 
-    def get_dimension(self):
-        """ Get the dimension of the image region."""
-        return (self.cutmask.width, self.cutmask.height)
+		result = image.copy()
+		overlay = image.copy()
+
+		cv.rectangle(overlay, self.upper_left, self.lower_right, color, -1)
+
+		cv.addWeighted(overlay, alpha, result, 1 - alpha, 0, result)
+		return result
+
+
+	def get_ratio(self):
+		""" Get the aspect ratio of height and width."""
+		return self.cutmask.height / self.cutmask.width
+
+
+	def get_dimension(self):
+		""" Get the dimension of the image region."""
+		return (self.cutmask.width, self.cutmask.height)
 
 
 class Rectangle(object):
-    """ Rectangle wrapper.
-    """
+	"""
+	Rectangle wrapper.
+	"""
 
-    def __init__(self, upper_left_point, size):
-        self.width, self.height = size
-        self.upper_left = upper_left_point
-        self.lower_right = (upper_left_point[0] + self.width, upper_left_point[1] + self.height)
+	def __init__(self, upper_left_point, size):
+		self.width, self.height = size
+		self.upper_left = upper_left_point
+		self.lower_right = (upper_left_point[0] + self.width, upper_left_point[1] + self.height)
 
 
 class CsvExporter(object):
-    """ Simple csv exporter that saves reports into the root path of the model."""
+	"""
+	Simple csv exporter that saves reports into the root path of the model.
+	"""
 
-    def __init__(self, path=os.getcwd() + '/data/'):
-        self.path = path
+	def __init__(self, path=os.getcwd() + '/data/'):
+		self.path = path
 
-    def export(self, data, name=None):
-        """
-        Exports the given data.
+	def export(self, data, name=None):
+		"""
+		Exports the given data.
+		:param data: list of a list of the data. rows[cols[]]
+		:param name: optional name of the file. If None a uuid is generated."
+		:return:
+		"""
 
-        Keyword arguments:
-        data -- list of a list of the data. rows[cols[]]
-        name -- optional name of the file. If None a uuid is generated."
-        """
+		if name is None:
+			name = get_uuid()
+		path = self.path + name + ".csv"
+		with open(path, "wb") as f:
+			writer = csv.writer(f, dialect="excel")
+			writer.writerows(data)
 
-        if name is None:
-            name = get_uuid()
-        path = self.path + name + ".csv"
-        with open(path, "wb") as f:
-            writer = csv.writer(f, dialect="excel")
-            writer.writerows(data)
-
-        # return the path
-        return path
+		# return the path
+		return path

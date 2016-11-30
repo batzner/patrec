@@ -17,12 +17,12 @@ The image size is 3 GB. This option is the fastest way if you do not have OpenCV
 1. Build the image by running `docker build -t patrec .` (Don't forget the point at the end of the command) in the project's root directory where the `Dockerfile` is located. However, building the Dockerimage will take a very long time.
 2. Run the image with `docker run -p 5000:80 patrec`
 
-#### 3. Install without Docker (Linux)
+#### 3a. Install without Docker (Linux)
 1. Install all python dependencies by running `sudo pip install -r requirements.txt` in the project's root directory.
 2. Install OpenCV 2.4.13 on your machine following [these steps](http://docs.opencv.org/2.4/doc/tutorials/introduction/table_of_content_introduction/table_of_content_introduction.html).
 3. Start the Flask web app with `python runlocal.py`.
 
-#### 4. Install without Docker (Windows)
+#### 3b. Install without Docker (Windows)
 1. (Recommended) Install the [Anaconda Python Distribution](https://www.continuum.io/downloads)
 2. Install all python dependencies by running `pip install -r requirements.txt` in the project's root directory.
 3. Install OpenCV 2.4.13 on your machine by downloading the OpenCV Installer from the [OpenCV Website](http://opencv.org/). 
